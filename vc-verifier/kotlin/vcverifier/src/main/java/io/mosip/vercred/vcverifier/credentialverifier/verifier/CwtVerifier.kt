@@ -47,26 +47,15 @@ class CwtVerifier {
         }
     }
 
-    // COSE header label 35 (x5u) - RFC 9360
+    // COSE header label 35 (x5u) - RFC 9360. Read from the protected header only so the URL is covered by the signature.
     private fun extractX5u(coseObj: CBORObject): String? {
         val X5U = CBORObject.FromObject(35)
 
         val protectedBytes = coseObj[0].GetByteString()
-        if (protectedBytes.isNotEmpty()) {
-            val protected = CBORObject.DecodeFromBytes(protectedBytes)
-            val x5u = protected[X5U]
-            if (x5u != null && x5u.type == CBORType.TextString) {
-                return x5u.AsString()
-            }
-        }
+        if (protectedBytes.isEmpty()) return null
 
-        val unprotected = coseObj[1]
-        val x5u = unprotected[X5U]
-        if (x5u != null && x5u.type == CBORType.TextString) {
-            return x5u.AsString()
-        }
-
-        return null
+        val x5u = CBORObject.DecodeFromBytes(protectedBytes)[X5U]
+        return if (x5u != null && x5u.type == CBORType.TextString) x5u.AsString() else null
     }
 
     // Prefers x5u-based key resolution and falls back to JWKS for HTTP(S) issuers by constructing the .well-known/jwks.json endpoint locally

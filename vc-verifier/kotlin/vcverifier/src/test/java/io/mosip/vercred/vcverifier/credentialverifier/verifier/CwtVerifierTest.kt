@@ -1,12 +1,12 @@
 package io.mosip.vercred.vcverifier.credentialverifier.verifier
 
+import io.mockk.clearMocks
+import io.mockk.every
 import io.mockk.mockkObject
+import io.mockk.verify
 import io.mosip.vercred.vcverifier.exception.PublicKeyNotFoundException
 import io.mosip.vercred.vcverifier.exception.SignatureVerificationException
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
@@ -15,40 +15,23 @@ import testutils.readClasspathFile
 import io.mosip.vercred.vcverifier.networkManager.NetworkManagerClient
 import org.junit.jupiter.api.assertThrows
 import org.springframework.util.ResourceUtils
-import java.net.InetAddress
 import java.nio.file.Files
-import okio.Buffer
 
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class CwtVerifierTest {
 
-    // x5u test CWTs require a real HTTP listener because X5uPublicKeyResolver fetches certificates directly via OkHttp, bypassing the existing MockK/NetworkManagerClient setup
-    private var x5uServer: MockWebServer? = null
+    // x5u fixtures are signed for https://issuer.example.com; the cert fetch goes through the mocked NetworkManagerClient.
+    private val x5uCertUrl = "https://issuer.example.com/leaf-cert.der"
 
     @BeforeAll
     fun setup() {
         mockkObject(NetworkManagerClient.Companion)
         loadMockPublicKeys()
-        startX5uCertServer()
-    }
-
-    @AfterAll
-    fun teardown() {
-        x5uServer?.shutdown()
-    }
-
-    private fun startX5uCertServer() {
         val certBytes = Files.readAllBytes(
             ResourceUtils.getFile(ResourceUtils.CLASSPATH_URL_PREFIX + "cwt_vc/x5u-leaf-cert.der").toPath()
         )
-        x5uServer = MockWebServer().apply {
-            // x5u test fixtures are signed against http://127.0.0.1:18081 (same host as iss), so the server must bind to that fixed port to keep the embedded x5u URI valid.
-            start(InetAddress.getByName("127.0.0.1"), 18081)
-            enqueue(MockResponse().setResponseCode(200).setBody(Buffer().write(certBytes)))
-            // second enqueue for the second test (invalid-x5u-cwt.hex hits the same URL)
-            enqueue(MockResponse().setResponseCode(200).setBody(Buffer().write(certBytes)))
-        }
+        every { NetworkManagerClient.fetchBytes(x5uCertUrl) } returns certBytes
     }
 
     @Test
@@ -77,6 +60,32 @@ class CwtVerifierTest {
         assertThrows<PublicKeyNotFoundException> {
             CwtVerifier().verify(coseHex)
         }
+    }
+
+    @Test
+    fun `should reject non-https x5u`() {
+        val coseHex = readClasspathFile("cwt_vc/http-x5u-cwt.hex")
+            .replace("\\s".toRegex(), "")
+
+        assertThrows<PublicKeyNotFoundException> {
+            CwtVerifier().verify(coseHex)
+        }
+    }
+
+    @Test
+    fun `should ignore x5u carried only in the unprotected header`() {
+        // Earlier tests already hit fetchBytes, so wipe the call history (keep stubs) before counting.
+        clearMocks(NetworkManagerClient.Companion, answers = false)
+        every {
+            NetworkManagerClient.sendHTTPRequest("https://issuer.example.com/.well-known/jwks.json", any())
+        } returns null
+        val coseHex = readClasspathFile("cwt_vc/unprotected-x5u-cwt.hex")
+            .replace("\\s".toRegex(), "")
+
+        assertThrows<PublicKeyNotFoundException> {
+            CwtVerifier().verify(coseHex)
+        }
+        verify(exactly = 0) { NetworkManagerClient.fetchBytes(x5uCertUrl) }
     }
 
     @Test

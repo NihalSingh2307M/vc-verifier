@@ -1,8 +1,7 @@
 package io.mosip.vercred.vcverifier.keyResolver.types.x509
 
 import io.mosip.vercred.vcverifier.exception.PublicKeyNotFoundException
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import io.mosip.vercred.vcverifier.networkManager.NetworkManagerClient
 import java.io.ByteArrayInputStream
 import java.net.URI
 import java.security.PublicKey
@@ -25,22 +24,25 @@ class X5uPublicKeyResolver {
         }
     }
 
+    // A plain-http x5u lets anyone on the path swap the certificate, so only https is accepted.
+    private fun requireHttps(x5u: String) {
+        val scheme = try {
+            URI(x5u).scheme
+        } catch (e: Exception) {
+            null
+        }
+        if (!"https".equals(scheme, ignoreCase = true)) {
+            throw PublicKeyNotFoundException("x5u must be an https URL")
+        }
+    }
+
     fun resolve(uri: String, issuer: URI): PublicKey {
+        requireHttps(uri)
         requireSameHostAsIssuer(uri, issuer)
         return try {
-            val client = OkHttpClient.Builder().build()
-            val request = Request.Builder().url(uri).get().build()
-
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    throw PublicKeyNotFoundException("x5u fetch failed with HTTP ${response.code} for $uri")
-                }
-                val certBytes = response.body?.bytes()
-                    ?: throw PublicKeyNotFoundException("x5u response body was empty for $uri")
-
-                val certFactory = CertificateFactory.getInstance("X.509")
-                certFactory.generateCertificate(ByteArrayInputStream(certBytes)).publicKey
-            }
+            val certBytes = NetworkManagerClient.fetchBytes(uri)
+            CertificateFactory.getInstance("X.509")
+                .generateCertificate(ByteArrayInputStream(certBytes)).publicKey
         } catch (exception: Exception) {
             logger.severe("Error while resolving public key from x5u certificate: ${exception.message}")
             throw PublicKeyNotFoundException(

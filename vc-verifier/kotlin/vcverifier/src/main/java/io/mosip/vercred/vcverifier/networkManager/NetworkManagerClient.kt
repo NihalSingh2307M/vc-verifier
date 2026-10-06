@@ -11,6 +11,23 @@ import java.io.InterruptedIOException
 
 class NetworkManagerClient {
     companion object {
+        // Plain GET returning the raw body, for non-JSON payloads like DER certificates.
+        // Shares the timeout/failure mapping with sendHTTPRequest so callers see the same errors.
+        fun fetchBytes(url: String): ByteArray {
+            try {
+                val client = OkHttpClient.Builder().build()
+                val request = Request.Builder().url(url).get().build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) throw Exception(response.toString())
+                    return response.body?.bytes() ?: throw Exception("Empty response body")
+                }
+            } catch (exception: InterruptedIOException) {
+                throw NetworkManagerClientExceptions.NetworkRequestTimeout()
+            } catch (exception: Exception) {
+                throw NetworkManagerClientExceptions.NetworkRequestFailed(exception.message ?: "unknown error")
+            }
+        }
+
         fun sendHTTPRequest(
             url: String,
             method: HttpMethod,

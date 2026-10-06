@@ -1,13 +1,10 @@
 package io.mosip.vercred.vcverifier.credentialverifier.types
 
+import io.mockk.every
 import io.mockk.mockkObject
 import io.mosip.vercred.vcverifier.constants.CredentialFormat
 import io.mosip.vercred.vcverifier.credentialverifier.CredentialVerifierFactory
 import io.mosip.vercred.vcverifier.networkManager.NetworkManagerClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
-import okio.Buffer
-import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeAll
@@ -16,14 +13,12 @@ import org.junit.jupiter.api.TestInstance
 import org.springframework.util.ResourceUtils
 import testutils.mockHttpResponse
 import testutils.readClasspathFile
-import java.net.InetAddress
 import java.nio.file.Files
 
 // End-to-end test of the production CWT flow (CredentialVerifierFactory → CwtVerifiableCredential), executing validate() and verify() together for both key-resolution paths
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class CwtVerifiableCredentialTest {
 
-    private var x5uServer: MockWebServer? = null
     private val credential = CredentialVerifierFactory().get(CredentialFormat.CWT_VC)
 
     @BeforeAll
@@ -37,15 +32,7 @@ class CwtVerifiableCredentialTest {
         val certBytes = Files.readAllBytes(
             ResourceUtils.getFile(ResourceUtils.CLASSPATH_URL_PREFIX + "cwt_vc/x5u-leaf-cert.der").toPath()
         )
-        x5uServer = MockWebServer().apply {
-            start(InetAddress.getByName("127.0.0.1"), 18081)
-            enqueue(MockResponse().setResponseCode(200).setBody(Buffer().write(certBytes)))
-        }
-    }
-
-    @AfterAll
-    fun teardown() {
-        x5uServer?.shutdown()
+        every { NetworkManagerClient.fetchBytes("https://issuer.example.com/leaf-cert.der") } returns certBytes
     }
 
     @Test
