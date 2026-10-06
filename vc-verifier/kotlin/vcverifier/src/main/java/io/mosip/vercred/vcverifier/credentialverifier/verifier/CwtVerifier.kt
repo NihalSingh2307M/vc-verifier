@@ -73,7 +73,7 @@ class CwtVerifier {
     private fun resolvePublicKey(coseObj: CBORObject, issuer: URI, kid: String?): PublicKey {
         val x5u = extractX5u(coseObj)
         if (x5u != null) {
-            return X5uPublicKeyResolver().resolve(x5u)
+            return X5uPublicKeyResolver().resolve(x5u, issuer)
         }
 
         val verificationMethod = when (issuer.scheme) {

@@ -1,6 +1,7 @@
 package io.mosip.vercred.vcverifier.credentialverifier.verifier
 
 import io.mockk.mockkObject
+import io.mosip.vercred.vcverifier.exception.PublicKeyNotFoundException
 import io.mosip.vercred.vcverifier.exception.SignatureVerificationException
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -42,7 +43,7 @@ class CwtVerifierTest {
             ResourceUtils.getFile(ResourceUtils.CLASSPATH_URL_PREFIX + "cwt_vc/x5u-leaf-cert.der").toPath()
         )
         x5uServer = MockWebServer().apply {
-            // x5u test fixtures are signed against http://127.0.0.1:18081, so the server must bind to that fixed port to keep the embedded x5u URI valid.
+            // x5u test fixtures are signed against http://127.0.0.1:18081 (same host as iss), so the server must bind to that fixed port to keep the embedded x5u URI valid.
             start(InetAddress.getByName("127.0.0.1"), 18081)
             enqueue(MockResponse().setResponseCode(200).setBody(Buffer().write(certBytes)))
             // second enqueue for the second test (invalid-x5u-cwt.hex hits the same URL)
@@ -64,6 +65,16 @@ class CwtVerifierTest {
             .replace("\\s".toRegex(), "")
 
         assertThrows<SignatureVerificationException> {
+            CwtVerifier().verify(coseHex)
+        }
+    }
+
+    @Test
+    fun `should reject x5u whose host differs from iss host`() {
+        val coseHex = readClasspathFile("cwt_vc/mismatched-host-x5u-cwt.hex")
+            .replace("\\s".toRegex(), "")
+
+        assertThrows<PublicKeyNotFoundException> {
             CwtVerifier().verify(coseHex)
         }
     }

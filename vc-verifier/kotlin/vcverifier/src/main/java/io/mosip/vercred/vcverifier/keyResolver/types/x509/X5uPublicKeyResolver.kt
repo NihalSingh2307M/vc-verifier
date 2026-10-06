@@ -4,6 +4,7 @@ import io.mosip.vercred.vcverifier.exception.PublicKeyNotFoundException
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.ByteArrayInputStream
+import java.net.URI
 import java.security.PublicKey
 import java.security.cert.CertificateFactory
 import java.util.logging.Logger
@@ -12,7 +13,20 @@ class X5uPublicKeyResolver {
 
     private val logger = Logger.getLogger(X5uPublicKeyResolver::class.java.name)
 
-    fun resolve(uri: String): PublicKey {
+    // Until trust anchor checks exist, x5u must live on the same host as iss, so a token cannot point at an arbitrary certificate.
+    private fun requireSameHostAsIssuer(x5u: String, issuer: URI) {
+        val x5uHost = try {
+            URI(x5u).host
+        } catch (e: Exception) {
+            null
+        }
+        if (x5uHost.isNullOrBlank() || issuer.host.isNullOrBlank() || !x5uHost.equals(issuer.host, ignoreCase = true)) {
+            throw PublicKeyNotFoundException("x5u host must match the issuer (iss) host")
+        }
+    }
+
+    fun resolve(uri: String, issuer: URI): PublicKey {
+        requireSameHostAsIssuer(uri, issuer)
         return try {
             val client = OkHttpClient.Builder().build()
             val request = Request.Builder().url(uri).get().build()
