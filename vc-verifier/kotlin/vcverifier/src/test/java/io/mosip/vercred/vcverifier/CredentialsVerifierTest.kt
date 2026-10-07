@@ -1,8 +1,6 @@
 package io.mosip.vercred.vcverifier
 
-import io.mockk.every
 import io.mockk.mockkObject
-import io.mockk.unmockkObject
 import io.mosip.vercred.vcverifier.constants.CredentialFormat.DC_SD_JWT
 import io.mosip.vercred.vcverifier.constants.CredentialFormat.LDP_VC
 import io.mosip.vercred.vcverifier.constants.CredentialFormat.MSO_MDOC
@@ -28,6 +26,9 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.Timeout
+import org.threeten.bp.Clock
+import org.threeten.bp.Instant
+import org.threeten.bp.ZoneOffset
 import testutils.mockHttpResponse
 import testutils.readClasspathFile
 import java.util.concurrent.TimeUnit
@@ -48,21 +49,22 @@ class CredentialsVerifierTest {
         Util.documentLoader = null
     }
 
-    /**
-     * The published SD-JWT fixture is signed by an external issuer (funke.animo.id) and its
-     * exp has since passed, so it cannot be re-issued locally. These tests cover SD-JWT and
-     * Key Binding JWT verification rather than expiry, so the expiry check is held open for
-     * their duration; expiry itself is covered by DateUtils' own tests.
-     */
-    private fun <T> ignoringCredentialExpiry(block: () -> T): T {
-        mockkObject(DateUtils)
-        every { DateUtils.isVCExpired(any()) } returns false
+    /**Runs block with DateUtils' clock frozen at [at], so fixtures with a fixed exp don't age out. */
+    private fun <T> withFrozenTime(at: Instant, block: () -> T): T {
+        val original = DateUtils.clock
+        DateUtils.clock = Clock.fixed(at, ZoneOffset.UTC)
         try {
             return block()
         } finally {
-            unmockkObject(DateUtils)
+            DateUtils.clock = original
         }
     }
+
+    /** Within the validity window of all `sdJwtVc*.txt` fixtures. */
+    private val realCredentialsFrozenAt: Instant = Instant.parse("2026-09-01T00:00:00Z")
+
+    /** Within the validity window of `sdJwtWithKbJwtES256.txt`. */
+    private val kbJwtFixtureFrozenAt: Instant = Instant.parse("2025-10-01T00:00:00Z")
 
     @Test
     @Timeout(value = 20, unit = TimeUnit.SECONDS)
@@ -291,7 +293,7 @@ class CredentialsVerifierTest {
     fun `should verify SD-JWT with KB JWT when holder binding is not required`() {
         val vc = readClasspathFile("sd-jwt_vc/sdJwtWithKbJwtES256.txt")
 
-        val verificationResult = ignoringCredentialExpiry {
+        val verificationResult = withFrozenTime(kbJwtFixtureFrozenAt) {
             CredentialsVerifier().verify(vc, VC_SD_JWT, validateKeyBindingJwt = false)
         }
 
@@ -305,7 +307,7 @@ class CredentialsVerifierTest {
     fun `should verify SD-JWT with KB JWT via verifyAndGetCredentialStatus when holder binding is required`() {
         val vc = readClasspathFile("sd-jwt_vc/sdJwtWithKbJwtES256.txt")
 
-        val result = ignoringCredentialExpiry {
+        val result = withFrozenTime(kbJwtFixtureFrozenAt) {
             CredentialsVerifier().verifyAndGetCredentialStatus(
                 vc,
                 VC_SD_JWT,
@@ -362,7 +364,9 @@ class CredentialsVerifierTest {
      * the self-certifying DID.
      */
     private fun verifyRealCredential(name: String) =
-        CredentialsVerifier().verify(readClasspathFile("sd-jwt_vc/$name").trim(), DC_SD_JWT)
+        withFrozenTime(realCredentialsFrozenAt) {
+            CredentialsVerifier().verify(readClasspathFile("sd-jwt_vc/$name").trim(), DC_SD_JWT)
+        }
 
     @Test
     fun `should verify a real credential whose x5c certificate has a SAN matching iss`() {
