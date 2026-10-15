@@ -32,7 +32,7 @@ class CwtVerifiableCredentialTest {
         val certBytes = Files.readAllBytes(
             ResourceUtils.getFile(ResourceUtils.CLASSPATH_URL_PREFIX + "cwt_vc/x5u-leaf-cert.der").toPath()
         )
-        every { NetworkManagerClient.fetchBytes("https://issuer.example.com/leaf-cert.der") } returns certBytes
+        every { NetworkManagerClient.sendHTTPRequestForBytes("https://issuer.example.com/leaf-cert.der") } returns certBytes
     }
 
     @Test

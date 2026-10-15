@@ -31,7 +31,7 @@ class CwtVerifierTest {
         val certBytes = Files.readAllBytes(
             ResourceUtils.getFile(ResourceUtils.CLASSPATH_URL_PREFIX + "cwt_vc/x5u-leaf-cert.der").toPath()
         )
-        every { NetworkManagerClient.fetchBytes(x5uCertUrl) } returns certBytes
+        every { NetworkManagerClient.sendHTTPRequestForBytes(x5uCertUrl) } returns certBytes
     }
 
     @Test
@@ -74,7 +74,7 @@ class CwtVerifierTest {
 
     @Test
     fun `should ignore x5u carried only in the unprotected header`() {
-        // Earlier tests already hit fetchBytes, so wipe the call history (keep stubs) before counting.
+        // Earlier tests already hit sendHTTPRequestForBytes, so wipe the call history (keep stubs) before counting.
         clearMocks(NetworkManagerClient.Companion, answers = false)
         every {
             NetworkManagerClient.sendHTTPRequest("https://issuer.example.com/.well-known/jwks.json", any())
@@ -85,7 +85,7 @@ class CwtVerifierTest {
         assertThrows<PublicKeyNotFoundException> {
             CwtVerifier().verify(coseHex)
         }
-        verify(exactly = 0) { NetworkManagerClient.fetchBytes(x5uCertUrl) }
+        verify(exactly = 0) { NetworkManagerClient.sendHTTPRequestForBytes(x5uCertUrl) }
     }
 
     @Test

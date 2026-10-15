@@ -10,6 +10,7 @@ import io.mosip.vercred.vcverifier.exception.PublicKeyNotFoundException
 import io.mosip.vercred.vcverifier.exception.SignatureVerificationException
 import io.mosip.vercred.vcverifier.exception.UnknownException
 import io.mosip.vercred.vcverifier.keyResolver.PublicKeyResolverFactory
+import io.mosip.vercred.vcverifier.keyResolver.types.x509.X5tHash
 import io.mosip.vercred.vcverifier.keyResolver.types.x509.X5uPublicKeyResolver
 import io.mosip.vercred.vcverifier.utils.Util.hexToBytes
 import io.mosip.vercred.vcverifier.utils.Util.parseFullyQualifiedIssuer
@@ -58,11 +59,31 @@ class CwtVerifier {
         return if (x5u != null && x5u.type == CBORType.TextString) x5u.AsString() else null
     }
 
+    // COSE header label 34 (x5t) - RFC 9360: [hashAlg, hashValue]. Protected header only, same as x5u.
+    // A malformed x5t fails verification instead of being ignored.
+    private fun extractX5t(coseObj: CBORObject): X5tHash? {
+        val X5T = CBORObject.FromObject(34)
+
+        val protectedBytes = coseObj[0].GetByteString()
+        if (protectedBytes.isEmpty()) return null
+
+        val x5t = CBORObject.DecodeFromBytes(protectedBytes)[X5T] ?: return null
+        if (x5t.type != CBORType.Array || x5t.size() != 2 || x5t[1].type != CBORType.ByteString) {
+            throw SignatureVerificationException("Invalid x5t header")
+        }
+        val algorithm: Any = when (x5t[0].type) {
+            CBORType.Integer -> x5t[0].AsInt64Value()
+            CBORType.TextString -> x5t[0].AsString()
+            else -> throw SignatureVerificationException("Invalid x5t hash algorithm")
+        }
+        return X5tHash(algorithm, x5t[1].GetByteString())
+    }
+
     // Prefers x5u-based key resolution and falls back to JWKS for HTTP(S) issuers by constructing the .well-known/jwks.json endpoint locally
     private fun resolvePublicKey(coseObj: CBORObject, issuer: URI, kid: String?): PublicKey {
         val x5u = extractX5u(coseObj)
         if (x5u != null) {
-            return X5uPublicKeyResolver().resolve(x5u, issuer)
+            return X5uPublicKeyResolver().resolve(x5u, issuer, extractX5t(coseObj))
         }
 
         val verificationMethod = when (issuer.scheme) {

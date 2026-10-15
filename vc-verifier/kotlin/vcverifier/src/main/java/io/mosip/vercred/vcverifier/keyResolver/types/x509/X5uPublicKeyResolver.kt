@@ -36,18 +36,22 @@ class X5uPublicKeyResolver {
         }
     }
 
-    fun resolve(uri: String, issuer: URI): PublicKey {
+    // x5t is optional for older issuers; when the signed header carries it, the fetched cert must match it.
+    fun resolve(uri: String, issuer: URI, x5t: X5tHash? = null): PublicKey {
         requireHttps(uri)
         requireSameHostAsIssuer(uri, issuer)
-        return try {
-            val certBytes = NetworkManagerClient.fetchBytes(uri)
-            CertificateFactory.getInstance("X.509")
-                .generateCertificate(ByteArrayInputStream(certBytes)).publicKey
+        val cert = try {
+            val certBytes = NetworkManagerClient.sendHTTPRequestForBytes(uri)
+            CertificateFactory.getInstance("X.509").generateCertificate(ByteArrayInputStream(certBytes))
         } catch (exception: Exception) {
             logger.severe("Error while resolving public key from x5u certificate: ${exception.message}")
             throw PublicKeyNotFoundException(
                 "Unable to extract public key from x5u certificate: ${exception.message}"
             )
         }
+        if (x5t != null && !X5tCertificateMatcher.matches(cert, x5t)) {
+            throw PublicKeyNotFoundException("x5u certificate does not match the x5t thumbprint")
+        }
+        return cert.publicKey
     }
 }
