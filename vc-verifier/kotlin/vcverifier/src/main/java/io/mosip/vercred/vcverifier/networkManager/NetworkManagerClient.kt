@@ -11,8 +11,6 @@ import java.io.InterruptedIOException
 
 class NetworkManagerClient {
     companion object {
-        // Single place for client setup, success check, and timeout/failure mapping.
-        // Callers only decide how to read the response body.
         private fun <T> execute(request: Request, readBody: (ResponseBody?) -> T): T {
             try {
                 val client = OkHttpClient.Builder().build()
@@ -26,8 +24,6 @@ class NetworkManagerClient {
                 throw NetworkManagerClientExceptions.NetworkRequestFailed(exception.message ?: "unknown error")
             }
         }
-
-        // GET returning the raw body, for non-JSON payloads like DER certificates.
         fun sendHTTPRequestForBytes(url: String): ByteArray {
             val request = Request.Builder().url(url).get().build()
             return execute(request) { body ->

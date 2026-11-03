@@ -6,10 +6,6 @@ import java.security.cert.Certificate
 // COSE x5t (RFC 9360, label 34) is [hashAlg, hashValue]; hashAlg is -16 or "sha-256" for SHA-256.
 class X5tHash(val algorithm: Any?, val hash: ByteArray)
 
-/**
- * Checks a fetched certificate against the x5t thumbprint carried in the signed header:
- * SHA-256 over the certificate's DER bytes, compared in constant time.
- */
 object X5tCertificateMatcher {
 
     private const val COSE_SHA_256 = -16L

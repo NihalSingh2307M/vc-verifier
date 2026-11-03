@@ -35,8 +35,6 @@ class X5uPublicKeyResolver {
             throw PublicKeyNotFoundException("x5u must be an https URL")
         }
     }
-
-    // x5t is optional for older issuers; when the signed header carries it, the fetched cert must match it.
     fun resolve(uri: String, issuer: URI, x5t: X5tHash? = null): PublicKey {
         requireHttps(uri)
         requireSameHostAsIssuer(uri, issuer)

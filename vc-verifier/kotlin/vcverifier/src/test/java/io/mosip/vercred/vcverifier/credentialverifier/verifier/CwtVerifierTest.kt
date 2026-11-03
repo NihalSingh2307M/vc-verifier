@@ -23,6 +23,7 @@ class CwtVerifierTest {
 
     // x5u fixtures are signed for https://issuer.example.com; the cert fetch goes through the mocked NetworkManagerClient.
     private val x5uCertUrl = "https://issuer.example.com/leaf-cert.der"
+    private val x5tX5uCertUrl = "https://issuer.example.com/x5t-x5u-leaf-cert.der"
 
     @BeforeAll
     fun setup() {
@@ -32,6 +33,10 @@ class CwtVerifierTest {
             ResourceUtils.getFile(ResourceUtils.CLASSPATH_URL_PREFIX + "cwt_vc/x5u-leaf-cert.der").toPath()
         )
         every { NetworkManagerClient.sendHTTPRequestForBytes(x5uCertUrl) } returns certBytes
+        val x5tCertBytes = Files.readAllBytes(
+            ResourceUtils.getFile(ResourceUtils.CLASSPATH_URL_PREFIX + "cwt_vc/x5t-x5u-leaf-cert.der").toPath()
+        )
+        every { NetworkManagerClient.sendHTTPRequestForBytes(x5tX5uCertUrl) } returns x5tCertBytes
     }
 
     @Test
@@ -86,6 +91,24 @@ class CwtVerifierTest {
             CwtVerifier().verify(coseHex)
         }
         verify(exactly = 0) { NetworkManagerClient.sendHTTPRequestForBytes(x5uCertUrl) }
+    }
+
+    @Test
+    fun `should verify CWT with unprotected x5u when protected x5t matches the certificate`() {
+        val coseHex = readClasspathFile("cwt_vc/unprotected-x5u-protected-x5t-cwt.hex")
+            .replace("\\s".toRegex(), "")
+
+        assertTrue(CwtVerifier().verify(coseHex))
+    }
+
+    @Test
+    fun `should reject unprotected x5u when protected x5t does not match the certificate`() {
+        val coseHex = readClasspathFile("cwt_vc/unprotected-x5u-mismatched-x5t-cwt.hex")
+            .replace("\\s".toRegex(), "")
+
+        assertThrows<PublicKeyNotFoundException> {
+            CwtVerifier().verify(coseHex)
+        }
     }
 
     @Test

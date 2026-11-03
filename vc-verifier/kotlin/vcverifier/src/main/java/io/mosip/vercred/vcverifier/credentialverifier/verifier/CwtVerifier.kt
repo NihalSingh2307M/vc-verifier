@@ -47,27 +47,17 @@ class CwtVerifier {
             throw SignatureVerificationException(exception.message ?: "Invalid issuer (iss)")
         }
     }
-
-    // COSE header label 35 (x5u) - RFC 9360. Read from the protected header only so the URL is covered by the signature.
-    private fun extractX5u(coseObj: CBORObject): String? {
-        val X5U = CBORObject.FromObject(35)
-
+    private fun protectedHeader(coseObj: CBORObject): CBORObject? {
         val protectedBytes = coseObj[0].GetByteString()
-        if (protectedBytes.isEmpty()) return null
-
-        val x5u = CBORObject.DecodeFromBytes(protectedBytes)[X5U]
-        return if (x5u != null && x5u.type == CBORType.TextString) x5u.AsString() else null
+        return if (protectedBytes.isEmpty()) null else CBORObject.DecodeFromBytes(protectedBytes)
     }
 
-    // COSE header label 34 (x5t) - RFC 9360: [hashAlg, hashValue]. Protected header only, same as x5u.
+    // COSE header label 34 (x5t) - RFC 9360: [hashAlg, hashValue]. Protected header only, since it is the signed anchor.
     // A malformed x5t fails verification instead of being ignored.
     private fun extractX5t(coseObj: CBORObject): X5tHash? {
         val X5T = CBORObject.FromObject(34)
 
-        val protectedBytes = coseObj[0].GetByteString()
-        if (protectedBytes.isEmpty()) return null
-
-        val x5t = CBORObject.DecodeFromBytes(protectedBytes)[X5T] ?: return null
+        val x5t = protectedHeader(coseObj)?.get(X5T) ?: return null
         if (x5t.type != CBORType.Array || x5t.size() != 2 || x5t[1].type != CBORType.ByteString) {
             throw SignatureVerificationException("Invalid x5t header")
         }
@@ -79,11 +69,21 @@ class CwtVerifier {
         return X5tHash(algorithm, x5t[1].GetByteString())
     }
 
-    // Prefers x5u-based key resolution and falls back to JWKS for HTTP(S) issuers by constructing the .well-known/jwks.json endpoint locally
+    // COSE header label 35 (x5u) - RFC 9360. Protected x5u is always read. An unprotected x5u is read only when a
+    // protected x5t is present, because the signed thumbprint then binds the downloaded certificate.
+    private fun extractX5u(coseObj: CBORObject, x5t: X5tHash?): String? {
+        val X5U = CBORObject.FromObject(35)
+
+        val fromProtected = protectedHeader(coseObj)?.get(X5U)
+        val x5u = fromProtected ?: if (x5t != null) coseObj[1]?.get(X5U) else null
+        return if (x5u != null && x5u.type == CBORType.TextString) x5u.AsString() else null
+    }
+    
     private fun resolvePublicKey(coseObj: CBORObject, issuer: URI, kid: String?): PublicKey {
-        val x5u = extractX5u(coseObj)
+        val x5t = extractX5t(coseObj)
+        val x5u = extractX5u(coseObj, x5t)
         if (x5u != null) {
-            return X5uPublicKeyResolver().resolve(x5u, issuer, extractX5t(coseObj))
+            return X5uPublicKeyResolver().resolve(x5u, issuer, x5t)
         }
 
         val verificationMethod = when (issuer.scheme) {
