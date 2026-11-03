@@ -28,6 +28,9 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.Timeout
+import org.threeten.bp.Clock
+import org.threeten.bp.Instant
+import org.threeten.bp.ZoneOffset
 import testutils.mockHttpResponse
 import testutils.readClasspathFile
 import java.util.concurrent.TimeUnit
@@ -352,6 +355,19 @@ class CredentialsVerifierTest {
         assertTrue(result.verificationResult.verificationStatus)
         assertEquals("", result.verificationResult.verificationMessage)
         assertEquals("", result.verificationResult.verificationErrorCode)
+    }
+    
+    /** Fixtures and their x5c certs overlap only between 2026-08-25 and 2026-09-24. */
+    private val realCredentialsFrozenAt: Instant = Instant.parse("2026-09-01T00:00:00Z")
+
+    private fun <T> withFrozenTime(at: Instant, block: () -> T): T {
+        val original = DateUtils.clock
+        DateUtils.clock = Clock.fixed(at, ZoneOffset.UTC)
+        try {
+            return block()
+        } finally {
+            DateUtils.clock = original
+        }
     }
 
     /**
